@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { pool, initializeDatabase } = require('./database');
+const { sql, pool, initializeDatabase } = require('./database');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -8,13 +8,15 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Lista os cadastros mais recentes primeiro.
+// Lista todos os cadastros mais recentes primeiro.
 app.get('/api/people', async (request, response) => {
   try {
-    const [people] = await pool.execute(
-      'SELECT id, name, email, phone, created_at FROM people ORDER BY id DESC',
-    );
-    response.json(people);
+    const result = await pool.request().query(`
+      SELECT id, name, email, phone, created_at
+      FROM dbo.people
+      ORDER BY id DESC;
+    `);
+    response.json(result.recordset);
   } catch (error) {
     console.error('Erro ao listar pessoas:', error.message);
     response.status(500).json({ error: 'Não foi possível carregar os cadastros.' });
@@ -36,19 +38,26 @@ function validatePerson(request, response, next) {
   next();
 }
 
+function isDuplicateEmail(error) {
+  return error.number === 2601 || error.number === 2627;
+}
+
 app.post('/api/people', validatePerson, async (request, response) => {
   try {
     const { name, email, phone } = request.person;
-    const [result] = await pool.execute(
-      'INSERT INTO people (name, email, phone) VALUES (?, ?, ?)',
-      [name, email, phone],
-    );
+    const result = await pool.request()
+      .input('name', sql.NVarChar(120), name)
+      .input('email', sql.NVarChar(254), email)
+      .input('phone', sql.NVarChar(30), phone)
+      .query(`
+        INSERT INTO dbo.people (name, email, phone)
+        OUTPUT INSERTED.id, INSERTED.name, INSERTED.email, INSERTED.phone, INSERTED.created_at
+        VALUES (@name, @email, @phone);
+      `);
 
-    const [rows] = await pool.execute('SELECT * FROM people WHERE id = ?', [result.insertId]);
-    const person = rows[0];
-    response.status(201).json(person);
+    response.status(201).json(result.recordset[0]);
   } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (isDuplicateEmail(error)) {
       return response.status(409).json({ error: 'Já existe um cadastro com este e-mail.' });
     }
     console.error('Erro ao cadastrar pessoa:', error.message);
@@ -64,18 +73,24 @@ app.put('/api/people/:id', validatePerson, async (request, response) => {
 
   try {
     const { name, email, phone } = request.person;
-    const [result] = await pool.execute(
-      'UPDATE people SET name = ?, email = ?, phone = ? WHERE id = ?',
-      [name, email, phone, id],
-    );
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('name', sql.NVarChar(120), name)
+      .input('email', sql.NVarChar(254), email)
+      .input('phone', sql.NVarChar(30), phone)
+      .query(`
+        UPDATE dbo.people
+        SET name = @name, email = @email, phone = @phone
+        OUTPUT INSERTED.id, INSERTED.name, INSERTED.email, INSERTED.phone, INSERTED.created_at
+        WHERE id = @id;
+      `);
 
-    const [rows] = await pool.execute('SELECT * FROM people WHERE id = ?', [id]);
-    if (rows.length === 0) {
+    if (result.recordset.length === 0) {
       return response.status(404).json({ error: 'Cadastro não encontrado.' });
     }
-    response.json(rows[0]);
+    response.json(result.recordset[0]);
   } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') {
+    if (isDuplicateEmail(error)) {
       return response.status(409).json({ error: 'Já existe um cadastro com este e-mail.' });
     }
     console.error('Erro ao atualizar pessoa:', error.message);
@@ -90,8 +105,11 @@ app.delete('/api/people/:id', async (request, response) => {
   }
 
   try {
-    const [result] = await pool.execute('DELETE FROM people WHERE id = ?', [id]);
-    if (result.affectedRows === 0) {
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM dbo.people OUTPUT DELETED.id WHERE id = @id;');
+
+    if (result.recordset.length === 0) {
       return response.status(404).json({ error: 'Cadastro não encontrado.' });
     }
     response.status(204).end();
@@ -101,14 +119,14 @@ app.delete('/api/people/:id', async (request, response) => {
   }
 });
 
-// Inicializa o banco antes de aceitar requisições da interface.
+// Só abre a porta da API depois de conectar ao SQL Server.
 initializeDatabase().then(() => {
   app.listen(port, () => {
-    console.log(`API BD-RF conectada ao MySQL e disponível em http://localhost:${port}`);
+    console.log(`API BD-RF conectada ao SQL Server em http://localhost:${port}`);
   });
 }).catch(async (error) => {
-  console.error('Não foi possível conectar ao MySQL ou preparar a tabela people.');
+  console.error('Não foi possível conectar ao SQL Server ou preparar a tabela people.');
   console.error(error.message);
-  await pool.end();
+  if (pool.connected) await pool.close();
   process.exitCode = 1;
 });

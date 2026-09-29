@@ -112,7 +112,7 @@ export default function App() {
           <a className="nav-link active" href="#cadastro">Pessoas</a>
           <a className="nav-link" href="#lista">Cadastros</a>
         </nav>
-        <div className="topbar-right"><span className="status-dot" /> MySQL conectado</div>
+        <div className="topbar-right"><span className="status-dot" /> SQL Server conectado</div>
       </header>
 
       <main id="inicio" className="main-content">
@@ -124,7 +124,7 @@ export default function App() {
 
         <section className="stats-row" aria-label="Resumo dos cadastros">
           <div className="stat-card"><span className="stat-icon people-icon">♧</span><div><span className="stat-label">PESSOAS CADASTRADAS</span><strong>{people.length.toString().padStart(2, '0')}</strong></div></div>
-          <div className="stat-card"><span className="stat-icon sync-icon">↻</span><div><span className="stat-label">ARMAZENAMENTO</span><strong className="stat-text">MySQL</strong></div></div>
+          <div className="stat-card"><span className="stat-icon sync-icon">↻</span><div><span className="stat-label">ARMAZENAMENTO</span><strong className="stat-text">SQL Server</strong></div></div>
           <div className="stat-card"><span className="stat-icon shield-icon">⌑</span><div><span className="stat-label">STATUS DO SISTEMA</span><strong className="stat-text status-text">Operacional <i /></strong></div></div>
         </section>
 
